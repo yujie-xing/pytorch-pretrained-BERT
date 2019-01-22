@@ -524,11 +524,15 @@ def main():
         logger.info("  Num examples = %d", len(train_examples))
         logger.info("  Batch size = %d", args.train_batch_size)
         logger.info("  Num steps = %d", num_train_steps)
-        all_input_ids = torch.tensor([f.input_ids for f in train_features], dtype=torch.long)
-        all_input_mask = torch.tensor([f.input_mask for f in train_features], dtype=torch.long)
-        all_segment_ids = torch.tensor([f.segment_ids for f in train_features], dtype=torch.long)
+
+        all_input_ids_a = torch.tensor([f.input_ids_a for f in train_features], dtype=torch.long)
+        all_input_ids_b = torch.tensor([f.input_ids_b for f in train_features], dtype=torch.long)
+        all_input_mask_a = torch.tensor([f.input_mask_a for f in train_features], dtype=torch.long)
+        all_input_mask_b = torch.tensor([f.input_mask_b for f in train_features], dtype=torch.long)
+        all_segment_ids_a = torch.tensor([f.segment_ids_a for f in train_features], dtype=torch.long)
+        all_segment_ids_b = torch.tensor([f.segment_ids_b for f in train_features], dtype=torch.long)
         all_label_ids = torch.tensor([f.label_id for f in train_features], dtype=torch.long)
-        train_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_ids)
+        train_data = TensorDataset(all_input_ids_a, all_input_ids_b, all_input_mask_a, all_input_mask_b, all_segment_ids_a, all_segment_ids_b, all_label_ids)
         if args.local_rank == -1:
             train_sampler = RandomSampler(train_data)
         else:
@@ -541,8 +545,8 @@ def main():
             nb_tr_examples, nb_tr_steps = 0, 0
             for step, batch in enumerate(tqdm(train_dataloader, desc="Iteration")):
                 batch = tuple(t.to(device) for t in batch)
-                input_ids, input_mask, segment_ids, label_ids = batch
-                loss = model(input_ids, segment_ids, input_mask, label_ids)
+                input_ids_a, input_ids_b, input_mask_a, input_mask_b, segment_ids_a, segment_ids_b, label_ids = batch
+                loss = model(input_ids_a, input_ids_b, input_mask_a, input_mask_b, segment_ids_a, segment_ids_b, label_ids)
                 if n_gpu > 1:
                     loss = loss.mean()  # mean() to average on multi-gpu.
                 if args.gradient_accumulation_steps > 1:
@@ -554,7 +558,7 @@ def main():
                     loss.backward()
 
                 tr_loss += loss.item()
-                nb_tr_examples += input_ids.size(0)
+                nb_tr_examples += input_ids_a.size(0)
                 nb_tr_steps += 1
                 if (step + 1) % args.gradient_accumulation_steps == 0:
                     # modify learning rate with special warm up BERT uses
@@ -584,11 +588,15 @@ def main():
         logger.info("***** Running evaluation *****")
         logger.info("  Num examples = %d", len(eval_examples))
         logger.info("  Batch size = %d", args.eval_batch_size)
-        all_input_ids = torch.tensor([f.input_ids for f in eval_features], dtype=torch.long)
-        all_input_mask = torch.tensor([f.input_mask for f in eval_features], dtype=torch.long)
-        all_segment_ids = torch.tensor([f.segment_ids for f in eval_features], dtype=torch.long)
+        all_input_ids_a = torch.tensor([f.input_ids_a for f in eval_features], dtype=torch.long)
+        all_input_ids_b = torch.tensor([f.input_ids_b for f in eval_features], dtype=torch.long)
+        all_input_mask_a = torch.tensor([f.input_mask_a for f in eval_features], dtype=torch.long)
+        all_input_mask_b = torch.tensor([f.input_mask_b for f in eval_features], dtype=torch.long)
+        all_segment_ids_a = torch.tensor([f.segment_ids_a for f in eval_features], dtype=torch.long)
+        all_segment_ids_b = torch.tensor([f.segment_ids_b for f in eval_features], dtype=torch.long)
         all_label_ids = torch.tensor([f.label_id for f in eval_features], dtype=torch.long)
-        eval_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_ids)
+
+        eval_data = TensorDataset(all_input_ids_a, all_input_ids_b, all_input_mask_a, all_input_mask_b, all_segment_ids_a, all_segment_ids_b, all_label_ids)
         # Run prediction for full data
         eval_sampler = SequentialSampler(eval_data)
         eval_dataloader = DataLoader(eval_data, sampler=eval_sampler, batch_size=args.eval_batch_size)
@@ -597,24 +605,29 @@ def main():
         eval_loss, eval_accuracy = 0, 0
         nb_eval_steps, nb_eval_examples = 0, 0
 
-        for input_ids, input_mask, segment_ids, label_ids in tqdm(eval_dataloader, desc="Evaluating"):
-            input_ids = input_ids.to(device)
-            input_mask = input_mask.to(device)
-            segment_ids = segment_ids.to(device)
+        for input_ids_a, input_ids_b, input_mask_a, input_mask_b, segment_ids_a, segment_ids_b, label_ids in tqdm(eval_dataloader, desc="Evaluating"):
+            input_ids_a = input_ids_a.to(device)
+            input_ids_b = input_ids_b.to(device)
+            input_mask_a = input_mask_a.to(device)
+            input_mask_b = input_mask_b.to(device)
+            segment_ids_a = segment_ids_a.to(device)
+            segment_ids_b = segment_ids_b.to(device)
             label_ids = label_ids.to(device)
 
             with torch.no_grad():
-                tmp_eval_loss = model(input_ids, segment_ids, input_mask, label_ids)
-                logits = model(input_ids, segment_ids, input_mask)
+                tmp_eval_loss = model(input_ids_a, input_ids_b, input_mask_a, input_mask_b, segment_ids_a, segment_ids_b, label_ids)
+                logits = model(input_ids_a, input_ids_b, input_mask_a, input_mask_b, segment_ids_a, segment_ids_b, label_ids)
 
             logits = logits.detach().cpu().numpy()
             label_ids = label_ids.to('cpu').numpy()
+            import pdb
+            pdb.set_trace()
             tmp_eval_accuracy = accuracy(logits, label_ids)
 
             eval_loss += tmp_eval_loss.mean().item()
             eval_accuracy += tmp_eval_accuracy
 
-            nb_eval_examples += input_ids.size(0)
+            nb_eval_examples += input_ids_a.size(0)
             nb_eval_steps += 1
 
         eval_loss = eval_loss / nb_eval_steps
