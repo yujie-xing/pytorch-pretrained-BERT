@@ -30,6 +30,7 @@ import shutil
 
 import torch
 from torch import nn
+import torch.nn.functional as F
 from torch.nn import CrossEntropyLoss
 
 from .file_utils import cached_path
@@ -944,20 +945,27 @@ class BertForSequenceRetrieval(PreTrainedBertModel):
     def __init__(self, config, num_labels=2):
         super(BertForSequenceRetrieval, self).__init__(config)
         self.num_labels = num_labels
-        self.bert_a = BertModel(config)
-        self.bert_b = BertModel(config)
-        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        import copy
+        config_b = copy.deepcopy(config)
+        config_a = config
+        self.bert_a = BertModel(config_a)
+        self.bert_b = BertModel(config_b)
+        self.dropout_a = nn.Dropout(config_a.hidden_dropout_prob)
+        self.dropout_b = nn.Dropout(config_b.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, num_labels)
         self.apply(self.init_bert_weights)
 
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None, labels=None):
-        _, pooled_output = self.bert(input_ids, token_type_ids, attention_mask, output_all_encoded_layers=False)
-        pooled_output = self.dropout(pooled_output)
-        logits = self.classifier(pooled_output)
+    def forward(self, input_ids_a, input_ids_b, token_type_ids_a=None, token_type_ids_b=None,  attention_mask_a=None, attention_mask_b=None, labels=None):
+        _, pooled_output_a = self.bert_a(input_ids_a, token_type_ids_a, attention_mask_a, output_all_encoded_layers=False)
+        _, pooled_output_b = self.bert_b(input_ids_b, token_type_ids_b, attention_mask_b, output_all_encoded_layers=False)
+
+        pooled_output_a = self.dropout_a(pooled_output_a)
+        pooled_output_b = self.dropout_a(pooled_output_b)
+        logits = pooled_output_a * pooled_output_b
+        logits = torch.sum(logits, -1, keepdim=True)
 
         if labels is not None:
-            loss_fct = CrossEntropyLoss()
-            loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            loss = F.binary_cross_entropy_with_logits(logits.squeeze(1), labels.float())
             return loss
         else:
             return logits

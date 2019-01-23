@@ -304,7 +304,7 @@ def _truncate_seq_pair(tokens_a, tokens_b, max_length):
 
 
 def accuracy(out, labels):
-    outputs = np.argmax(out, axis=1)
+    outputs = out > 0.5
     return np.sum(outputs == labels)
 
 
@@ -616,12 +616,12 @@ def main():
 
             with torch.no_grad():
                 tmp_eval_loss = model(input_ids_a, input_ids_b, input_mask_a, input_mask_b, segment_ids_a, segment_ids_b, label_ids)
-                logits = model(input_ids_a, input_ids_b, input_mask_a, input_mask_b, segment_ids_a, segment_ids_b, label_ids)
+                logits = model(input_ids_a, input_ids_b, input_mask_a, input_mask_b, segment_ids_a, segment_ids_b)
 
             logits = logits.detach().cpu().numpy()
+            logits = logits.reshape([-1, ])
             label_ids = label_ids.to('cpu').numpy()
-            import pdb
-            pdb.set_trace()
+
             tmp_eval_accuracy = accuracy(logits, label_ids)
 
             eval_loss += tmp_eval_loss.mean().item()
