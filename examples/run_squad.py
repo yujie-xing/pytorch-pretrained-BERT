@@ -105,6 +105,35 @@ class InputFeatures(object):
         self.start_position = start_position
         self.end_position = end_position
 
+def read_examples(input_file, is_training):
+    examples = []
+
+    with open(input_file, "r") as reader:
+        for line in reader:
+            datum = json.loads(line)
+
+            answers = datum['answers']
+            if len(answers) ==0:
+                if is_training == True:
+                    continue
+                start_position = -1
+                end_position = -1
+                is_impossible = True
+                continue
+            else:
+                start_position = answers[0][0]
+                end_position = answers[0][1]
+                is_impossible = False
+
+            example = SquadExample(
+                qas_id=datum['id'],
+                question_text=' '.join(datum['question']),
+                doc_tokens=datum['document'],
+                orig_answer_text=' '.join(datum['document']),
+                start_position=start_position,
+                end_position=end_position)
+            examples.append(example)
+    return examples
 
 def read_squad_examples(input_file, is_training):
     """Read a SQuAD json file into a list of SquadExample."""
@@ -791,8 +820,9 @@ def main():
     train_examples = None
     num_train_steps = None
     if args.do_train:
-        train_examples = read_squad_examples(
+        train_examples = read_examples(
             input_file=args.train_file, is_training=True)
+
         num_train_steps = int(
             len(train_examples) / args.train_batch_size / args.gradient_accumulation_steps * args.num_train_epochs)
 
@@ -925,7 +955,7 @@ def main():
     model.to(device)
 
     if args.do_predict and (args.local_rank == -1 or torch.distributed.get_rank() == 0):
-        eval_examples = read_squad_examples(
+        eval_examples = read_examples(
             input_file=args.predict_file, is_training=False)
         eval_features = convert_examples_to_features(
             examples=eval_examples,
